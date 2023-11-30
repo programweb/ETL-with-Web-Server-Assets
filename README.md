@@ -51,7 +51,7 @@ File content is uploaded and parsed.  Body content from the files is transformed
 Even the metadata in the JSON can be transformed, for instance, to distinguish cause and impairment.
 &nbsp;
 
-Cascading StyleSheets (CSS) of the GBD 2-Pagerator are ignored for a number of reasons: (a) content width is more constrained on the public web server than the GBD 2-Pagerator which is very important in-terms of layout; (b) the public web server must handle mobile devices; (c) some of the web server styles must be overridden for the Cause and Risk Summaries to be displayed properly; (d) the public site must maintain navigation consistently with existing pages on the website; (e) even the navigation adjacent to and for the Cause and Risk Summaries on the public site differs from the GBD 2-Pagerator.  So, new stylesheets are built for the Cause and Risk Summaries on the public site; yet, there is an effort to obtain template information from the JSON metadata.
+Cascading StyleSheets (CSS) are ignored for a number of reasons; egs: the public web server must handle mobile devices; the public site must maintain navigation consistently and there is differnt amounts of page real estate from one site to another.  So, new stylesheets are built for the public site; yet, we obtain template information from the JSON metadata.
 &nbsp;
 
 &nbsp;
