@@ -1,0 +1,229 @@
+<?php
+/**
+ * @file
+ * This module provides the custom functionality for the
+ * Disease and Injury Profiles feature.
+ * ihmeuw_disease_injury_init
+ */
+use ihmeuw_disease_injury\pageCreator;
+use ihmeuw_disease_injury\parseInput;
+
+/**
+ * Add CSS and Fonts
+ */
+function ihmeuw_disease_injury_preprocess(&$vars, $hook){
+  if($hook == 'page' &&
+    isset($vars['node']) &&
+    $vars['node']->type == 'disease_and_injury'){
+    drupal_add_css(drupal_get_path('module', 'ihmeuw_disease_injury') . '/css/base_pdf.css');
+    drupal_add_css(drupal_get_path('module', 'ihmeuw_disease_injury') . '/css/cause_pdf.css');
+    // I may need to dynamically apply cause_pdf or risk_pdf because risk makes the cause look terrible.
+    //drupal_add_css(drupal_get_path('module', 'ihmeuw_disease_injury') . '/css/risk_pdf.css');
+    drupal_add_css(drupal_get_path('module', 'ihmeuw_disease_injury') . '/css/dtt.css');
+  }
+}
+
+/**
+ * Implements hook_permission
+ * Remember to add this permission to the admin role.
+ */
+function ihmeuw_disease_injury_permission() {
+  return array(
+    'add_disease_injury' => array(
+      'title' => t('Add Disease and Injury Pages'),
+      'description' => t('Add pages via a form.'),
+    ),
+  );
+}
+
+/**
+ * Implements hook_menu()to create page.
+ */
+function ihmeuw_disease_injury_menu() {
+  $items = array();
+
+  $items['admin/add_disease_injury'] = array(
+    'title' => 'Add Disease and Injury Pages',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('ihmeuw_disease_injury_form'),
+    //'access callback' => TRUE,
+    'access arguments' => array('add_disease_injury'),
+  );
+
+  return $items;
+}
+
+/**
+ * @param $form
+ * @param $form_state
+ *
+ * @return array
+ */
+function ihmeuw_disease_injury_form(){
+  $form = array();
+
+  $form['ifi'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Disease and Injury Multi-Page Drupal Deployment'),
+  );
+
+  // File upload
+  $form['ifi']['file'] = array(
+    '#type' => 'file',
+    '#title' => t('Path to indexing file'),
+    '#description' => "Point to the indexing file (JSON or CSV)",
+  );
+
+  $form['ifi']['node_round'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Round'),
+    '#default_value' => '2019',
+    '#description' => "Year representing round (YYYY).",
+  );
+
+  // Publishing default
+  $node_published_options = array(
+    '0' => 'UNPUBLISHED',
+    '1' => 'PUBLISHED',
+  );
+  $form['ifi']['node_published'] = array(
+    '#title' => t('Publishing Status for New Pages'),
+    '#type' => 'select',
+    '#description' => '',
+    '#options' => $node_published_options,
+    '#default_value' => 0,
+  );
+
+  // Form buttons
+  $form['ifi']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => t('Submit'),
+    //'#submit' => array('ihmeuw_disease_injury_form_submit'),
+  );
+
+  return $form;
+}
+
+/**
+ * Form Validation
+ * @param $form
+ * @param $form_state
+ */
+function ihmeuw_disease_injury_form_validate($form, &$form_state) {
+  // May not be needed
+}
+
+/**
+ * Form submission
+ * @param $form
+ * @param $form_stat
+ *  *
+ *  */
+function ihmeuw_disease_injury_form_submit($form, &$form_state){
+
+  /**
+   * Includes
+   */
+  module_load_include('php', 'ihmeuw_disease_injury', 'inc/parseInput');
+  module_load_include('php', 'ihmeuw_disease_injury', 'inc/pageCreator');
+
+  /**
+   * Upload the file
+   */
+  dni_drupal_file_upload($form,$form_state);
+  
+  // dpm("Form state values:"); // debugging
+  // dpm($form_state['values']); // debugging
+
+  /**
+   * Parse the file contents
+   */
+  $file_extension = $form_state['values']['file_extension'];
+  $filepath = $form_state['values']['file']->uri;
+  $node_round = $form_state['values']['node_round'];
+  $node_published = $form_state['values']['node_published'];
+
+  $parseInput = new parseInput();
+  switch ($file_extension){
+    case "csv":
+      $pages_to_save = $parseInput->parseCSV($filepath);
+      break;
+    case "json":
+      $pages_to_save = $parseInput->parseJSON($filepath);
+      break;
+    default:
+      drupal_set_message('File extension of uploaded file not supported.', 'warning');
+      $pages_to_save = array();
+      break;
+  }
+
+  // dpm("Parsed file contents:"); // debugging
+  // dpm($pages_to_save); // debugging
+
+
+  /**
+   * Save Pages
+   */
+  $pageCreator = new pageCreator();
+  list($successCount, $messages) = $pageCreator->save_pages($pages_to_save, $form_state, $form,
+          $node_round, $node_published);
+
+  /**
+   * User messaging
+   */
+  if( $successCount ){
+    drupal_set_message( $messages['success'] );
+  }
+
+  //TODO try putting failures first
+  if( isset($messages['failure']) && $messages['failure'] ){
+    foreach($messages['failure'] as $failure){
+      drupal_set_message($failure, 'warning');
+    }
+  }
+
+  if( isset($messages['newpages']) ){
+    foreach($messages['newpages'] as $newpage){
+      drupal_set_message($newpage);
+    }
+  }
+
+  // Don't know if we need this or not
+  //$form_state['rebuild'] = true;
+}
+
+/**
+ * Custom function to handle the Drupal 'file' form upload process.
+ * Saves back to $form_state.
+ * @param $form
+ * @param $form_state
+ */
+function dni_drupal_file_upload($form, &$form_state){
+  /**
+   * Upload the File
+   */
+
+  // TODO: This custom path isn't working.  Not too important thought.
+  $file_path = 'public://disease_injury/indexes/';
+  // make sure directory exists, if not, create it
+  file_prepare_directory($file_path, FILE_CREATE_DIRECTORY);
+
+  // Validate the file, and save if valid
+  $file = file_save_upload('file', array(
+    'file_validate_extensions' => array('json', 'csv', 'xml'), // last extension will never validate
+    FILE_EXISTS_REPLACE
+  ));
+
+  // If we were unsuccessful with saving the file, set error.
+  if (!$file) {
+    form_set_error('file', t('Failed to save file'));
+  }
+
+  // Get the file extension
+  $file_pathinfo = pathinfo($file->uri);
+  $file_extension = $file_pathinfo['extension'];
+
+  // Save values back to the form_state
+  $form_state['values']['file'] = $file;
+  $form_state['values']['file_extension'] = $file_extension;
+}
